@@ -5,7 +5,7 @@ int main(int argc, char *argv[]){
     int p[2];
     int cur_pid;
     int pid;
-    char byte[2];
+    char byte;
     pipe(p);
     pid = fork();
     cur_pid = getpid();
@@ -14,7 +14,7 @@ int main(int argc, char *argv[]){
             fprintf(2, "pingpong: the pipe closed early\n");
             exit(1);
         }
-        fprintf(0, "%d: received ping\n", cur_pid);
+        fprintf(1, "%d: received ping\n", cur_pid);
         write(p[1], &byte, 1);
     }else{
         write(p[1], "0", 1);
@@ -23,7 +23,7 @@ int main(int argc, char *argv[]){
             fprintf(2, "pingpong: the pipe closed early\n");
             exit(1);
         }
-        fprintf(0, "%d: received pong\n", cur_pid);
+        fprintf(1, "%d: received pong\n", cur_pid);
     }
     exit(0);
 }

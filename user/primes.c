@@ -18,7 +18,7 @@ int main(int argc, char *argv[]){
                 fprintf(2, "primes: read error from pipe....\n");
                 exit(1);
             }
-            fprintf(0, "prime %d\n", v);
+            fprintf(1, "prime %d\n", v);
             for(;;){
                 state = read(read_fd, (void*)&n, sizeof(int));
                 if(state == -1){
