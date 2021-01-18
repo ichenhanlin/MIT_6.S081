@@ -696,3 +696,16 @@ procdump(void)
     printf("\n");
   }
 }
+
+// Return the current size of processes
+// UNUSED state processes will not be counted
+int proc_size(void){
+    int counter = 0;
+    struct proc *p;
+    for(p=proc; p<&proc[NPROC]; ++p){
+        if(p->state != UNUSED){
+            ++counter;
+        }
+    }
+    return counter;
+}
