@@ -132,7 +132,10 @@ kvmpa(uint64 va)
   pte_t *pte;
   uint64 pa;
   
-  pte = walk(kernel_pagetable, va, 0);
+  pagetable_t pagetable = myproc_kernel_pagetable();
+  if(pagetable == 0)
+      pagetable = kernel_pagetable;
+  pte = walk(pagetable, va, 0);
   if(pte == 0)
     panic("kvmpa");
   if((*pte & PTE_V) == 0)
@@ -220,6 +223,7 @@ uvminit(pagetable_t pagetable, uchar *src, uint sz)
   mem = kalloc();
   memset(mem, 0, PGSIZE);
   mappages(pagetable, 0, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_X|PTE_U);
+  //uvm2kvm(pagetable, myproc_kernel_pagetable(), 0, PGSIZE);
   memmove(mem, src, sz);
 }
 
@@ -230,6 +234,10 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
   char *mem;
   uint64 a;
+
+  //if(newsz > PLIC){
+  //    return 0;
+  //}
 
   if(newsz < oldsz)
     return oldsz;
@@ -248,6 +256,10 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
       return 0;
     }
   }
+  //if(uvm2kvm(pagetable, myproc_kernel_pagetable(), oldsz, newsz-oldsz) != 0){
+  //    uvmdealloc(pagetable, a, newsz);
+  //    return 0;
+  //}
   return newsz;
 }
 
@@ -264,6 +276,7 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   if(PGROUNDUP(newsz) < PGROUNDUP(oldsz)){
     int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
     uvmunmap(pagetable, PGROUNDUP(newsz), npages, 1);
+    //uvmunmap(myproc_kernel_pagetable(), PGROUNDUP(newsz), npages, 0);
   }
 
   return newsz;
@@ -396,6 +409,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
     srcva = va0 + PGSIZE;
   }
   return 0;
+    //return copyin_new(pagetable, dst, srcva, len);
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -439,4 +453,145 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+void lvmprint(pagetable_t pagetable, int level){
+    for(int i=0; i<512; ++i){
+        pte_t pte = pagetable[i];
+        if(pte & PTE_V){
+            pagetable_t next_pa = (pagetable_t)PTE2PA(pte);
+            if(level == 1){
+                printf("..");
+            }else if(level == 2){
+                printf(".. ..");
+            }else{
+                printf(".. .. ..");
+            }
+            printf("%d: pte %p pa %p\n", i, pte, next_pa);
+            if(level <= 2){
+                lvmprint(next_pa, level+1);
+            }
+        }
+    }
+}
+
+// print pagetable in the followling format
+// page table 0x0000000087f6e000
+// ..0: pte 0x0000000021fda801 pa 0x0000000087f6a000
+// .. ..0: pte 0x0000000021fda401 pa 0x0000000087f69000
+// .. .. ..0: pte 0x0000000021fdac1f pa 0x0000000087f6b000
+// .. .. ..1: pte 0x0000000021fda00f pa 0x0000000087f68000
+// .. .. ..2: pte 0x0000000021fd9c1f pa 0x0000000087f67000
+// ..255: pte 0x0000000021fdb401 pa 0x0000000087f6d000
+// .. ..511: pte 0x0000000021fdb001 pa 0x0000000087f6c000
+// .. .. ..510: pte 0x0000000021fdd807 pa 0x0000000087f76000
+// .. .. ..511: pte 0x0000000020001c0b pa 0x0000000080007000
+// Each PTE line shows the PTE index in its page-table page, 
+// the pte bits, and the physical address extracted from the PTE.
+void vmprint(pagetable_t pagetable){
+    printf("page table %p\n", pagetable);
+    lvmprint(pagetable, 1);
+}
+
+
+// // Remove npages of mappings starting from va. va must be
+// // page-aligned. The mappings must exist.
+// // Optionally free the physical memory.
+// void
+// kvmunmap(pagetable_t pagetable, uint64 va, int do_free)
+// {
+//     pte_t *pte;
+// 
+//     if((va % PGSIZE) != 0)
+//         panic("uvmunmap: not aligned");
+// 
+//     if((pte = walk(pagetable, va, 0)) == 0)
+//         panic("uvmunmap: walk");
+//     if((*pte & PTE_V) == 0)
+//         panic("uvmunmap: not mapped");
+//     if(PTE_FLAGS(*pte) == PTE_V)
+//         panic("uvmunmap: not a leaf");
+//     if(do_free){
+//         uint64 pa = PTE2PA(*pte);
+//         kfree((void*)pa);
+//     }
+//     *pte = 0;
+// }
+//
+
+void proc_kvmfree(pagetable_t pagetable){
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
+      // this PTE points to a lower-level page table.
+      uint64 child = PTE2PA(pte);
+      proc_kvmfree((pagetable_t)child);
+      pagetable[i] = 0;
+    } else if(pte & PTE_V){
+      pagetable[i] = 0;
+    }
+  }
+  kfree((void*)pagetable);
+}
+
+// create a direct-map page table for per process
+pagetable_t proc_kvminit(){
+    pagetable_t proc_kpagetable = (pagetable_t) kalloc();
+    if(proc_kpagetable == 0){
+        return 0;
+    }
+    memset(proc_kpagetable, 0, PGSIZE);
+
+    // uart registers
+    proc_kvmmap(proc_kpagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+
+    // virtio mmio disk interface
+    proc_kvmmap(proc_kpagetable, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+
+    // CLINT
+    proc_kvmmap(proc_kpagetable, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+
+    // PLIC
+    proc_kvmmap(proc_kpagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+
+    // map kernel text executable and read-only.
+    proc_kvmmap(proc_kpagetable, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+
+    // map kernel data and the physical RAM we'll make use of.
+    proc_kvmmap(proc_kpagetable, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+
+    // map the trampoline for trap entry/exit to
+    // the highest virtual address in the kernel.
+    proc_kvmmap(proc_kpagetable, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+    return proc_kpagetable;
+}
+
+// add a mapping to the process kernel page table.
+// only used when allocproc.
+// does not flush TLB or enable paging.
+void proc_kvmmap(pagetable_t proc_kpagetable, uint64 va, uint64 pa, uint64 sz, int perm)
+{
+  if(mappages(proc_kpagetable, va, sz, pa, perm) != 0)
+    panic("proc_kvmmap");
+}
+
+// create mapping from kernal pagetable to user pagetable
+// virtual address start at vstart and length is sz
+int uvm2kvm(pagetable_t upage, pagetable_t kpage, uint64 vstart, uint64 sz){
+    pte_t *pte;
+    uint64 pa, i;
+    uint flags;
+    for(i=PGROUNDDOWN(vstart); i < sz; i += PGSIZE){
+        if((pte = walk(upage, i, 0)) == 0)
+            panic("uvm2kvm: pte should exist");
+        if((*pte & PTE_V) == 0)
+            panic("uvm2kvm: page not present");
+        pa = PTE2PA(*pte);
+        flags = PTE_FLAGS(*pte) & (~PTE_U);
+        if(mappages(kpage, pa, PGSIZE, (uint64)pa, flags) != 0){
+            return -1;
+        }
+    }
+    return 0;
 }
