@@ -248,6 +248,8 @@ userinit(void)
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
+  //printf("userinit");
+  uvm2kvm(p->pagetable, p->kernel_pagetable, 0, p->sz);
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -266,16 +268,23 @@ userinit(void)
 int
 growproc(int n)
 {
-  uint sz;
+  uint sz, old_sz;
   struct proc *p = myproc();
 
   sz = p->sz;
+  old_sz = sz;
   if(n > 0){
-    if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
+    if(sz+n >= PLIC || (sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
+    }
+    if(PGROUNDUP(old_sz) < PGROUNDUP(sz)){
+        //printf("growproc %p -> %p\n", old_sz, sz);
+        uvm2kvm(p->pagetable, p->kernel_pagetable, old_sz, sz);
     }
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    int npages = (PGROUNDUP(old_sz) - PGROUNDUP(sz)) / PGSIZE;
+    uvmunmap(p->kernel_pagetable, PGROUNDUP(sz), npages, 0);
   }
   p->sz = sz;
   return 0;
@@ -301,11 +310,12 @@ fork(void)
     release(&np->lock);
     return -1;
   }
-  // if(uvm2kvm(np->pagetable, np->kernel_pagetable, 0, p->sz) < 0){
-  //   freeproc(np);
-  //   release(&np->lock);
-  //   return -1;
-  // }
+  //printf("fork\n");
+  if(uvm2kvm(np->pagetable, np->kernel_pagetable, 0, p->sz) < 0){
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
   
   np->sz = p->sz;
 

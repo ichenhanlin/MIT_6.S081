@@ -223,7 +223,6 @@ uvminit(pagetable_t pagetable, uchar *src, uint sz)
   mem = kalloc();
   memset(mem, 0, PGSIZE);
   mappages(pagetable, 0, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_X|PTE_U);
-  //uvm2kvm(pagetable, myproc_kernel_pagetable(), 0, PGSIZE);
   memmove(mem, src, sz);
 }
 
@@ -234,10 +233,6 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
   char *mem;
   uint64 a;
-
-  //if(newsz > PLIC){
-  //    return 0;
-  //}
 
   if(newsz < oldsz)
     return oldsz;
@@ -256,10 +251,6 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
       return 0;
     }
   }
-  //if(uvm2kvm(pagetable, myproc_kernel_pagetable(), oldsz, newsz-oldsz) != 0){
-  //    uvmdealloc(pagetable, a, newsz);
-  //    return 0;
-  //}
   return newsz;
 }
 
@@ -276,7 +267,6 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   if(PGROUNDUP(newsz) < PGROUNDUP(oldsz)){
     int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
     uvmunmap(pagetable, PGROUNDUP(newsz), npages, 1);
-    //uvmunmap(myproc_kernel_pagetable(), PGROUNDUP(newsz), npages, 0);
   }
 
   return newsz;
@@ -392,6 +382,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
+    /*
   uint64 n, va0, pa0;
 
   while(len > 0){
@@ -409,7 +400,8 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
     srcva = va0 + PGSIZE;
   }
   return 0;
-    //return copyin_new(pagetable, dst, srcva, len);
+  */
+    return copyin_new(pagetable, dst, srcva, len);
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -419,6 +411,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
+/*
   uint64 n, va0, pa0;
   int got_null = 0;
 
@@ -453,6 +446,8 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+  */
+    return copyinstr_new(pagetable, dst, srcva, max);
 }
 
 void lvmprint(pagetable_t pagetable, int level){
@@ -550,7 +545,7 @@ pagetable_t proc_kvminit(){
     proc_kvmmap(proc_kpagetable, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
 
     // CLINT
-    proc_kvmmap(proc_kpagetable, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+    //proc_kvmmap(proc_kpagetable, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
 
     // PLIC
     proc_kvmmap(proc_kpagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
@@ -578,18 +573,20 @@ void proc_kvmmap(pagetable_t proc_kpagetable, uint64 va, uint64 pa, uint64 sz, i
 
 // create mapping from kernal pagetable to user pagetable
 // virtual address start at vstart and length is sz
-int uvm2kvm(pagetable_t upage, pagetable_t kpage, uint64 vstart, uint64 sz){
+int uvm2kvm(pagetable_t upage, pagetable_t kpage, uint64 old_sz, uint64 new_sz){
+    if(old_sz == new_sz)
+        return 0;
     pte_t *pte;
     uint64 pa, i;
     uint flags;
-    for(i=PGROUNDDOWN(vstart); i < sz; i += PGSIZE){
+    for(i=PGROUNDUP(old_sz); i < new_sz; i += PGSIZE){
         if((pte = walk(upage, i, 0)) == 0)
             panic("uvm2kvm: pte should exist");
         if((*pte & PTE_V) == 0)
             panic("uvm2kvm: page not present");
-        pa = PTE2PA(*pte);
         flags = PTE_FLAGS(*pte) & (~PTE_U);
-        if(mappages(kpage, pa, PGSIZE, (uint64)pa, flags) != 0){
+        pa = PTE2PA(*pte);
+        if(mappages(kpage, i, PGSIZE, (uint64)pa, flags) != 0){
             return -1;
         }
     }
