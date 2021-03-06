@@ -10,6 +10,6 @@
 - [x] [Lab cow: Copy-on-write fork](https://github.com/ichenhanlin/MIT_6.S081/tree/cow)
 - [x] [Lab thread: Multithreading](https://github.com/ichenhanlin/MIT_6.S081/tree/thread)
 - [x] [Lab lock: Parallelism/locking](https://github.com/ichenhanlin/MIT_6.S081/tree/lock)
-- [ ] [Lab fs: File system](https://pdos.csail.mit.edu/6.828/2020/labs/fs.html)
+- [x] [Lab fs: File system](https://github.com/ichenhanlin/MIT_6.S081/tree/fs)
 - [ ] [Lab mmap: Mmap](https://pdos.csail.mit.edu/6.828/2020/labs/mmap.html)
 - [ ] [Lab net: Network stack](https://pdos.csail.mit.edu/6.828/2020/labs/ne)
