@@ -16,6 +16,41 @@
 #include "file.h"
 #include "fcntl.h"
 
+struct inode* to_symlink_target(struct inode* ip){
+    if(ip == 0 || ip->type != T_SYMLINK){
+        return ip;
+    }
+    char target[MAXPATH];
+    uint visited[10];
+    int cur = 1, i;
+    struct inode *node = ip;
+    visited[0] = ip->inum;
+    while(node->type == T_SYMLINK){
+        if(readi(node, 0, (uint64)&target, 0, MAXPATH) != MAXPATH){
+            panic("open: readi");
+        }
+        iunlockput(node);
+        if ((node = namei(target)) == 0) {
+            return 0;
+        }
+        ilock(node);
+        if(node->type == T_SYMLINK && cur >= 10){
+            iunlockput(node);
+            return 0;
+        }else if(node->type == T_SYMLINK){
+            for(i=0; i<cur; ++i){
+                if(visited[i] == node->inum){
+                    iunlockput(node);
+                    return 0;
+                }
+            }
+            visited[cur] = node->inum;
+            ++cur;
+        }
+    }
+    return node;
+}
+
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -313,6 +348,12 @@ sys_open(void)
       iunlockput(ip);
       end_op();
       return -1;
+    }else if(ip->type == T_SYMLINK && !(omode & O_NOFOLLOW)){
+        ip = to_symlink_target(ip);
+        if(ip == 0){
+            end_op();
+            return -1;
+        }
     }
   }
 
@@ -482,5 +523,26 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+uint64 sys_symlink(void) {
+  char path[MAXPATH], target[MAXPATH];
+  struct inode *ip;
+
+  if (argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+    return -1;
+
+  begin_op();
+  if((ip = create(path, T_SYMLINK, 0, 0)) == 0){
+      end_op();
+      return -1;
+  }
+  if(writei(ip, 0, (uint64)&target, 0, MAXPATH) != MAXPATH){
+      panic("symlink: writei");
+  }
+  iunlockput(ip);
+  end_op();
+
   return 0;
 }
