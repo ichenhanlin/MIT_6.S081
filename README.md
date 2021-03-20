@@ -11,5 +11,5 @@
 - [x] [Lab thread: Multithreading](https://github.com/ichenhanlin/MIT_6.S081/tree/thread)
 - [x] [Lab lock: Parallelism/locking](https://github.com/ichenhanlin/MIT_6.S081/tree/lock)
 - [x] [Lab fs: File system](https://github.com/ichenhanlin/MIT_6.S081/tree/fs)
-- [ ] [Lab mmap: Mmap](https://pdos.csail.mit.edu/6.828/2020/labs/mmap.html)
+- [x] [Lab mmap: Mmap](https://github.com/ichenhanlin/MIT_6.S081/tree/mmap)
 - [ ] [Lab net: Network stack](https://pdos.csail.mit.edu/6.828/2020/labs/ne)
