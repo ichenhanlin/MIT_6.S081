@@ -484,3 +484,85 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64 sys_mmap(void){
+    uint64 addr;
+    int length, prot, flags;
+    struct file *file;
+    struct proc *proc = myproc();
+    struct vma *v = 0;
+    if(argint(1, &length)<0 || argint(2, &prot)<0 || argint(3, &flags)<0 || argfd(4, 0, &file)<0){
+        return -1;
+    }
+    if(flags != MAP_SHARED && flags != MAP_PRIVATE){
+        return -1;
+    }
+    if(length <= 0){
+        return -1;
+    }
+    if(flags == MAP_SHARED && !file->writable && (prot & PROT_WRITE)){
+        return -1;
+    }
+    if(!file->readable && (prot & PROT_READ)){
+        return -1;
+    }
+    v = vmaalloc();
+    if(v == 0)
+        return -1;
+    addr = PGROUNDUP(proc->sz);
+    proc->sz = PGROUNDUP(addr+length);
+    v->file = file;
+    v->addr = addr;
+    v->length = length;
+    v->prot = prot;
+    v->flags = flags;
+    filedup(file);
+    return addr;
+}
+
+uint64 sys_munmap(void){
+    uint64 addr;
+    int size;
+    if(argaddr(0, &addr)<0 || argint(1, &size)<0){
+        return -1;
+    }
+    if(addr % PGSIZE != 0 || (addr+size) % PGSIZE !=0){
+        return -1;
+    }
+    struct proc *p = myproc();
+    struct vma *v = getVMA(addr);
+    if(v == 0){
+        return -1;
+    }
+
+    if(addr+size > v->addr + v->length){
+        return -1;
+    }
+
+    if(vmaunmap(p->pagetable, v, addr, size) != 0){
+        return -1;
+    }
+
+    if(addr == v->addr){
+        v->addr = addr+size;
+    }else if(addr+size != v->addr + v->length){
+        struct vma *new_v = vmaalloc();
+        if(new_v){
+            new_v->file = v->file;
+            filedup(v->file);
+            new_v->addr = addr+size;
+            new_v->length = v->addr+v->length - new_v->addr;
+            new_v->prot = v->prot;
+            new_v->flags = v->flags;
+        }else{
+            return -1;
+        }
+    }
+    v->length -= size;
+    if(v->length == 0){
+        fileclose(v->file);
+        v->file = 0;
+    }
+
+    return 0;
+}

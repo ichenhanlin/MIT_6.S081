@@ -5,6 +5,9 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
+#include "fcntl.h"
 
 /*
  * the kernel's page table.
@@ -170,9 +173,11 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
+        continue;
+      //panic("uvmunmap: walk");
     if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+        continue;
+      //panic("uvmunmap: not mapped");
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -181,6 +186,29 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     }
     *pte = 0;
   }
+}
+
+int vmaunmap(pagetable_t pagetable, struct vma* v, uint64 va, int size){
+    uint64 a;
+    pte_t *pte;
+    int flag;
+
+    for(a = va; a < va + size; a += PGSIZE){
+        if((pte = walk(pagetable, a, 0)) == 0)
+            continue;
+        if((*pte & PTE_V) == 0)
+            continue;
+        flag = PTE_FLAGS(*pte);
+        if(flag == PTE_V)
+            return -1;
+        if(v->flags == MAP_SHARED && vmawrite(v, a - v->addr, PGSIZE) == -1){
+            return -1;
+        }
+        uint64 pa = PTE2PA(*pte);
+        kfree((void*)pa);
+        *pte = 0;
+    }
+    return 0;
 }
 
 // create an empty user page table.
@@ -238,6 +266,21 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
     }
   }
   return newsz;
+}
+
+uint64 uvmallocpage(pagetable_t pagetable, uint64 addr, int flag){
+    char *mem = kalloc();
+    if(mem == 0){
+        return -1;
+    }
+    memset(mem, 0, PGSIZE);
+
+    uint64 va = PGROUNDDOWN(addr);
+    if(mappages(pagetable, va, PGSIZE, (uint64)mem, flag) != 0){
+        kfree(mem);
+        return -1;
+    }
+    return va;
 }
 
 // Deallocate user pages to bring the process size from oldsz to
@@ -304,9 +347,11 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
+        continue;
+      //panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+        continue;
+      //panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)

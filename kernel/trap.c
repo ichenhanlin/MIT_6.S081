@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -65,6 +66,23 @@ usertrap(void)
     intr_on();
 
     syscall();
+  }else if(r_scause() == 15 || r_scause() == 13){
+      uint64 va = r_stval();
+      if(p->sz <= va || va < p->trapframe->sp){
+          p->killed = 1;
+      }else{
+          struct vma *v = getVMA(va);
+          int flag = PTE_U;
+          flag |= (v->prot & PROT_READ) ? PTE_R : 0;
+          flag |= (v->prot & PROT_WRITE) ? PTE_W : 0;
+          if((va = uvmallocpage(p->pagetable, va, flag)) == -1){
+              p->killed = 1;
+          }else{
+              if(vmaread(v, va-v->addr, PGSIZE) != 0){
+                  p->killed = 1;
+              }
+          }
+      }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {

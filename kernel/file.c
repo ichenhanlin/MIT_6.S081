@@ -12,6 +12,7 @@
 #include "file.h"
 #include "stat.h"
 #include "proc.h"
+#include "fcntl.h"
 
 struct devsw devsw[NDEV];
 struct {
@@ -41,6 +42,19 @@ filealloc(void)
   }
   release(&ftable.lock);
   return 0;
+}
+
+// Allocate a vma structure
+struct vma*
+vmaalloc(void){
+    struct vma *v;
+    struct proc *p = myproc();
+    for(v = p->vma; v < p->vma + NOFILE; ++v){
+        if(v->file == 0){
+            return v;
+        }
+    }
+    return 0;
 }
 
 // Increment ref count for file f.
@@ -180,3 +194,41 @@ filewrite(struct file *f, uint64 addr, int n)
   return ret;
 }
 
+int vmawrite(struct vma *v, int offset, int size){
+    if(offset > v->length || offset+size > v->length){
+        return -1;
+    }
+    if(v->flags == MAP_SHARED && (v->prot & PROT_WRITE)){
+        begin_op();
+        ilock(v->file->ip);
+        writei(v->file->ip, 1, v->addr+offset, offset, size);
+        iunlock(v->file->ip);
+        end_op();
+        return 0;
+    }else{
+        return -1;
+    }
+}
+
+struct vma* getVMA(uint64 addr){
+    struct vma *v = 0;
+    struct proc *p = myproc();
+    for(v = p->vma; v < p->vma+NOFILE; ++v){
+        if(v->addr <= addr && addr < v->addr + v->length){
+            return v;
+        }
+    }
+    return 0;
+}
+int vmaread(struct vma *v, int offset, int size){
+    if(offset > v->length || offset+size > v->length){
+        return -1;
+    }
+    uint64 va = v->addr + offset;
+    ilock(v->file->ip);
+    if(readi(v->file->ip, 1, va, offset, size) == 0){
+        return -1;
+    }
+    iunlock(v->file->ip);
+    return 0;
+}

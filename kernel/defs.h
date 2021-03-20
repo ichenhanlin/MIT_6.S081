@@ -1,6 +1,7 @@
 struct buf;
 struct context;
 struct file;
+struct vma;
 struct inode;
 struct pipe;
 struct proc;
@@ -33,6 +34,10 @@ void            fileinit(void);
 int             fileread(struct file*, uint64, int n);
 int             filestat(struct file*, uint64 addr);
 int             filewrite(struct file*, uint64, int n);
+struct vma*     vmaalloc(void);
+struct vma*     getVMA(uint64);
+int             vmaread(struct vma *v, int offset, int size);
+int             vmawrite(struct vma *v, int offset, int size);
 
 // fs.c
 void            fsinit(int);
@@ -171,6 +176,8 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+uint64          uvmallocpage(pagetable_t pagetable, uint64 addr, int flag);
+int             vmaunmap(pagetable_t pagetable, struct vma* v, uint64 va, int size);
 
 // plic.c
 void            plicinit(void);

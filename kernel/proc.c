@@ -296,6 +296,13 @@ fork(void)
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
 
+  for(i = 0; i < NOFILE; ++i){
+      if(p->vma[i].file){
+          np->vma[i] = p->vma[i];
+          filedup(p->vma[i].file);
+      }
+  }
+
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
@@ -351,6 +358,16 @@ exit(int status)
       fileclose(f);
       p->ofile[fd] = 0;
     }
+  }
+
+  // unmap all files
+  struct vma *v = 0;
+  for(v=p->vma; v<p->vma+NOFILE; ++v){
+      if(v->file){
+          vmaunmap(p->pagetable, v, v->addr, v->length);
+          fileclose(v->file);
+          v->file = 0;
+      }
   }
 
   begin_op();
